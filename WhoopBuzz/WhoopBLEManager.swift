@@ -102,15 +102,17 @@ final class WhoopBLEManager: NSObject, ObservableObject {
         central.connect(peripheral)
     }
 
-    /// How many times the strap repeats the waveform per command (a longer, stronger
-    /// buzz from a single write — robust to app timing during an incoming call).
-    private let buzzLoops: UInt8 = 15
+    /// How many times the strap repeats the waveform per command. 6 is a value
+    /// confirmed accepted on real hardware; higher values (e.g. 15) are rejected by
+    /// the firmware and produce no buzz at all, so length comes from `buzzRepeats`
+    /// (whole commands chained) rather than from pushing this byte too high.
+    private let buzzLoops: UInt8 = 6
 
     /// Number of commands fired per buzz and their spacing — chained back-to-back so
-    /// the strong looped haptic plays as one long, sustained buzz, with redundancy in
-    /// case a write is lost amid the incoming-call moment.
-    private let buzzRepeats = 3
-    private let buzzRepeatInterval: TimeInterval = 1.4
+    /// the looped haptic plays as one long, sustained buzz, with redundancy in case a
+    /// write is lost amid the incoming-call moment.
+    private let buzzRepeats = 4
+    private let buzzRepeatInterval: TimeInterval = 1.1
 
     /// Fire the strong, sustained looped haptic. Safe to call when not ready (no-op).
     func buzz() {
