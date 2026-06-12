@@ -74,7 +74,21 @@ mentre è in carica** (va svegliata con un tap). Fonte: `BLE_REVERSE_ENGINEERING
 
 ## 6. Vincoli operativi (verificati nelle fonti)
 
-- **Un solo central per volta**: se l'app WHOOP ufficiale è connessa, "ruba" la strap. WhoopBuzz e
-  l'app ufficiale non possono tenere la connessione contemporaneamente.
+- **Keep-alive richiesto**: la strap lascia morire un link inattivo. Il codice di riferimento
+  `Strand/BLE/BLEManager.swift` di NoopApp tiene un **keep-alive a 30s** (`keepAliveIntervalSeconds = 30`,
+  comando `LINK_VALID` code 1) e **rimbalza il link** se non riceve dati per >120s
+  (`cancelPeripheralConnection`). → WhoopBuzz genera traffico periodico con un heartbeat `readRSSI()`
+  ogni 8s e forza la riconnessione se non vede segni di vita per >30s. Fonte:
+  [NoopApp/noop BLEManager.swift / PROTOCOL.md](https://github.com/NoopApp/noop).
+- **Scritture affidabili**: l'haptic va inviato come **confirmed write** (`.withResponse`): consegna
+  garantita o errore esplicito. Le `.withoutResponse` su segnale debole vengono **scartate in silenzio**
+  quando il buffer BLE è pieno (causa del "funziona solo a corto raggio"). Fonte:
+  [Apple — canSendWriteWithoutResponse](https://developer.apple.com/documentation/corebluetooth/cbperipheral/cansendwritewithoutresponse),
+  [Punch Through — Core Bluetooth guide](https://punchthrough.com/core-bluetooth-guide/).
+- **Un solo central per volta**: se l'app WHOOP ufficiale è connessa, "ruba" la strap (single bond).
+  WhoopBuzz e l'app ufficiale non possono tenere la connessione contemporaneamente. Fonte: NoopApp README.
+- **Range fisico**: il corpo/polso attenua il 2.4 GHz e il TX power di un wearable è basso → range
+  effettivo ridotto. Il TX power della strap e i connection parameter **non sono modificabili dall'app**;
+  lato central si può solo massimizzare l'uptime del link e riconnettere in modo aggressivo.
 - Il protocollo è **reverse-engineered**: un aggiornamento firmware WHOOP può romperlo.
 - WHOOP 4.0 usa service e opcode diversi (`61080001-…`, opcode `79`) — **fuori scope** per questa app.

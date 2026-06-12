@@ -55,10 +55,16 @@ Cosa garantisce il funzionamento continuo (già in codice):
 - **Keep-alive audio**: una sessione audio silenziosa (`.mixWithOthers`, non interrompe la musica)
   impedisce a iOS di sospendere l'app a schermo bloccato, così `CXCallObserver` scatta sempre e la
   scrittura BLE parte. Si riattiva da sola dopo ogni chiamata.
-- **Watchdog di riconnessione** (ogni 8s): se il braccialetto si scollega per qualsiasi motivo, l'app
-  riprova finché non si riaggancia, senza intervento.
+- **Heartbeat BLE** (`readRSSI` ogni 8s): tiene il link sveglio (il braccialetto scollega i link
+  inattivi) e rileva un link "zombie" (nessun segno di vita per >30s → riconnessione forzata).
+- **Buzz affidabile** (`.withResponse`): ogni comando è confermato dal braccialetto o dà errore (→
+  riconnessione). Le scritture non confermate venivano perse in silenzio a segnale debole, dando
+  l'impressione che funzionasse solo a corto raggio.
+- **Retry del buzz**: se la chiamata arriva mentre il link si sta riconnettendo, l'app ritenta per
+  qualche secondo finché torna pronta.
 - **State restoration**: se iOS termina l'app in background per memoria, la rilancia da solo al primo
   evento Bluetooth del braccialetto.
+- **Indicatore di segnale** in app (RSSI): per capire se sei in un punto a segnale debole.
 
 Cosa invece richiede un gesto tuo (limiti strutturali di iOS, non aggirabili):
 - **Non fare force-quit** dell'app (non scartarla dall'app switcher): iOS non rilancia un'app chiusa

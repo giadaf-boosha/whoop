@@ -45,3 +45,18 @@
 
 **Limiti strutturali iOS (non aggirabili, documentati in README):** force-quit manuale e riavvio del
 telefono richiedono di riaprire l'app una volta; il profilo di firma scade circa ogni 12 mesi.
+
+## Sprint 4 — Affidabilità del link BLE ✅ FATTO
+Sintomo dal campo: "vibra solo entro ~2m e dopo la prima volta non va più". Diagnosi (2 subagent +
+codice NoopApp): scritture `.withoutResponse` scartate in silenzio a segnale debole + stato `.ready`
+"stale" su link zombie + la strap droppa i link inattivi (serve keep-alive).
+- [x] Buzz come **`.withResponse`**: consegna garantita o errore esplicito → niente perdite silenziose;
+      su errore di scrittura → `cancelPeripheralConnection` + reconnect.
+- [x] **Heartbeat `readRSSI()` ogni 8s**: tiene il link sveglio (la strap idle si disconnette) e rileva
+      il link "zombie" (>30s senza segni di vita → bounce + reconnect).
+- [x] **Retry del buzz** (fino a ~8s) se la chiamata arriva mentre il link si sta riconnettendo.
+- [x] Stato gestito su disconnessione (`.connecting` per evitare race col watchdog; flag `expectingHelloAck`
+      per distinguere ack hello vs ack buzz).
+- [x] Indicatore **Segnale (RSSI)** in UI per diagnosticare il range.
+
+**DoD:** buzz affidabile a distanza normale (non solo ~2m) e su chiamate ripetute senza degrado.

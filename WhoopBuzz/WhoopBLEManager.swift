@@ -15,17 +15,19 @@ enum WhoopConnection: Equatable {
 
 /// Manages the BLE link to a WHOOP 5.0 / MG strap and sends the haptic buzz.
 ///
-/// Lifecycle: scan by service UUID → connect → discover → write CLIENT_HELLO
-/// (confirmed) → enable notifications → ready. The central is created with a
-/// restore identifier so iOS can relaunch the app and hand the connection back
-/// after a background BLE event.
+/// Lifecycle: discover → connect → discover services → write CLIENT_HELLO
+/// (confirmed) → enable notifications → ready. Once ready, an 8-second heartbeat
+/// (`readRSSI`) keeps the link warm and detects a stale link, because the strap
+/// drops an idle connection if it sees no traffic (mirrors the keep-alive in the
+/// NoopApp reference; see docs/ble-protocol-research.md §6).
 final class WhoopBLEManager: NSObject, ObservableObject {
     @Published private(set) var connection: WhoopConnection = .disconnected
     @Published private(set) var deviceName: String?
     @Published private(set) var lastBuzzAcked: Bool = false
-    /// Number of BLE peripherals seen during the current scan — a diagnostic that
-    /// distinguishes "scan blocked / nothing advertising" (0) from "saw devices but
-    /// none was a WHOOP" (>0).
+    /// Latest link signal strength (dBm) while connected — a diagnostic for range.
+    @Published private(set) var rssi: Int?
+    /// Number of BLE peripherals seen during the current scan — distinguishes
+    /// "scan blocked / nothing advertising" (0) from "saw devices but no WHOOP" (>0).
     @Published private(set) var scannedCount: Int = 0
 
     private var central: CBCentralManager!
@@ -33,11 +35,15 @@ final class WhoopBLEManager: NSObject, ObservableObject {
     private var commandChar: CBCharacteristic?
     private var seq: UInt8 = 0
     private var watchdog: Timer?
+    private var expectingHelloAck = false
+    /// When we last saw any sign of life from the strap (write ack, notify, RSSI).
+    private var lastSeenAt = Date()
 
     private let serviceUUID = CBUUID(string: Whoop.serviceUUID)
     private let commandUUID = CBUUID(string: Whoop.commandWriteUUID)
     private let notifyUUIDs = Set(Whoop.notifyUUIDs.map { CBUUID(string: $0) })
     private let restoreID = "com.boosha.whoopbuzz.central"
+    private let staleAfter: TimeInterval = 30
 
     override init() {
         super.init()
@@ -46,26 +52,35 @@ final class WhoopBLEManager: NSObject, ObservableObject {
             queue: .main,
             options: [CBCentralManagerOptionRestoreIdentifierKey: restoreID]
         )
-        // Re-check the connection regularly and recover from any drop (out of range,
-        // strap on charger, the official WHOOP app stealing it) without user action.
         watchdog = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
-            self?.ensureConnected()
+            self?.tick()
         }
     }
 
-    /// Make sure we are connected or actively trying to be. Called by the watchdog.
-    private func ensureConnected() {
+    /// Runs every 8s: keep the link alive when connected, recover it otherwise.
+    private func tick() {
         guard central?.state == .poweredOn else { return }
         switch connection {
-        case .ready, .connecting, .handshaking:
+        case .ready:
+            if Date().timeIntervalSince(lastSeenAt) > staleAfter {
+                bounceLink()            // link is a zombie — force a clean reconnect
+            } else {
+                strap?.readRSSI()       // heartbeat: traffic keeps the strap from idling out
+            }
+        case .connecting, .handshaking:
             return
         default:
-            if let strap {
-                connection = .connecting
-                central.connect(strap)
-            } else {
-                start()
-            }
+            ensureConnecting()
+        }
+    }
+
+    private func ensureConnecting() {
+        guard central?.state == .poweredOn else { return }
+        if let strap {
+            connection = .connecting
+            central.connect(strap)
+        } else {
+            start()
         }
     }
 
@@ -77,8 +92,7 @@ final class WhoopBLEManager: NSObject, ObservableObject {
     ///    can recover it.
     /// 2. Otherwise scan for *all* peripherals and match by name. The strap does not
     ///    reliably put its 128-bit service UUID in the advertising packet, so a
-    ///    service-filtered scan misses it; the reference implementation matches on the
-    ///    "WHOOP" name prefix instead (see docs/ble-protocol-research.md §5).
+    ///    service-filtered scan misses it (see docs/ble-protocol-research.md §5).
     func start() {
         guard central.state == .poweredOn else { return }
         guard strap == nil else { return }
@@ -104,19 +118,28 @@ final class WhoopBLEManager: NSObject, ObservableObject {
 
     /// How many times the strap repeats the waveform per command. 6 is a value
     /// confirmed accepted on real hardware; higher values (e.g. 15) are rejected by
-    /// the firmware and produce no buzz at all, so length comes from `buzzRepeats`
-    /// (whole commands chained) rather than from pushing this byte too high.
+    /// the firmware and produce no buzz at all, so length comes from `buzzRepeats`.
     private let buzzLoops: UInt8 = 6
-
-    /// Number of commands fired per buzz and their spacing — chained back-to-back so
-    /// the looped haptic plays as one long, sustained buzz, with redundancy in case a
-    /// write is lost amid the incoming-call moment.
+    /// Number of commands chained per buzz and their spacing — one long sustained buzz.
     private let buzzRepeats = 7
     private let buzzRepeatInterval: TimeInterval = 1.1
 
-    /// Fire the strong, sustained looped haptic. Safe to call when not ready (no-op).
+    /// Fire the strong, sustained looped haptic. If a call arrives mid-reconnect, keep
+    /// retrying until the link is ready, up to a deadline (so we don't buzz for a call
+    /// that already ended).
     func buzz() {
-        guard connection == .ready else { return }
+        buzz(deadline: Date().addingTimeInterval(8))
+    }
+
+    private func buzz(deadline: Date) {
+        guard connection == .ready else {
+            guard Date() < deadline else { return }
+            ensureConnecting()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.buzz(deadline: deadline)
+            }
+            return
+        }
         lastBuzzAcked = false
         for i in 0..<buzzRepeats {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * buzzRepeatInterval) { [weak self] in
@@ -125,16 +148,27 @@ final class WhoopBLEManager: NSObject, ObservableObject {
         }
     }
 
+    /// Each pulse is a confirmed write: the strap acks it, or we get an explicit error
+    /// (no silent loss on a weak link). Confirmed writes are also flow-controlled by
+    /// CoreBluetooth, so they are never dropped from a full queue like `.withoutResponse`.
     private func sendOnePulse() {
         guard let strap, let commandChar, connection == .ready else { return }
         seq &+= 1
-        strap.writeValue(Data(WhoopFrame.buzz(seq: seq, loops: buzzLoops)), for: commandChar, type: .withoutResponse)
+        strap.writeValue(Data(WhoopFrame.buzz(seq: seq, loops: buzzLoops)), for: commandChar, type: .withResponse)
     }
 
     private func sendClientHello() {
         guard let strap, let commandChar else { return }
         connection = .handshaking
+        expectingHelloAck = true
         strap.writeValue(Data(Whoop.clientHello), for: commandChar, type: .withResponse)
+    }
+
+    /// Tear down a stale/failed link; `didDisconnectPeripheral` then reconnects.
+    private func bounceLink() {
+        guard let strap else { return }
+        connection = .connecting
+        central.cancelPeripheralConnection(strap)
     }
 }
 
@@ -178,6 +212,7 @@ extension WhoopBLEManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        lastSeenAt = Date()
         peripheral.discoverServices([serviceUUID])
     }
 
@@ -187,9 +222,11 @@ extension WhoopBLEManager: CBCentralManagerDelegate {
         error: Error?
     ) {
         commandChar = nil
-        connection = .disconnected
-        // Keep the strap reference and reconnect; iOS holds this pending in the
-        // background and resumes when the strap is back in range.
+        expectingHelloAck = false
+        rssi = nil
+        // Go straight to .connecting (not .disconnected) so the watchdog doesn't race
+        // a second connect. iOS holds this pending and resumes when back in range.
+        connection = .connecting
         central.connect(peripheral)
     }
 
@@ -198,7 +235,7 @@ extension WhoopBLEManager: CBCentralManagerDelegate {
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
-        connection = .disconnected
+        connection = .connecting
         central.connect(peripheral)
     }
 }
@@ -231,11 +268,26 @@ extension WhoopBLEManager: CBPeripheralDelegate {
         didWriteValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        // The only confirmed write we issue is the CLIENT_HELLO; its ack means the
-        // encrypted session is open and the strap will accept commands.
-        if characteristic.uuid == commandUUID, error == nil {
-            connection = .ready
+        guard characteristic.uuid == commandUUID else { return }
+        if error != nil {
+            expectingHelloAck = false
+            bounceLink()            // the link is dead — reconnect and recover
+            return
         }
+        lastSeenAt = Date()
+        if expectingHelloAck {
+            expectingHelloAck = false
+            connection = .ready     // CLIENT_HELLO acked → session open
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
+        if error != nil {
+            bounceLink()
+            return
+        }
+        lastSeenAt = Date()
+        rssi = RSSI.intValue
     }
 
     func peripheral(
@@ -243,6 +295,7 @@ extension WhoopBLEManager: CBPeripheralDelegate {
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
+        lastSeenAt = Date()
         guard let value = characteristic.value else { return }
         if WhoopFrame.responseCommand([UInt8](value)) == Whoop.hapticCommand {
             lastBuzzAcked = true

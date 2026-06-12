@@ -27,9 +27,12 @@ fisiologici dal braccialetto. Supporto WHOOP 4.0 (protocollo diverso).
 - **`WhoopProtocol`** (Swift package, puro Foundation): costruzione frame puffin, CRC16-Modbus + CRC32,
   costanti BLE. Testato in isolamento — è la parte dove la correttezza è non-negoziabile e non dipende
   dall'hardware. Vedi `docs/ble-protocol-research.md`.
-- **`WhoopBLEManager`** (CoreBluetooth): scan per service UUID → connect → discover → `CLIENT_HELLO`
-  (confirmed write) → enable notify → `ready`. Riconnessione automatica su disconnect. `CBCentralManager`
-  con restore identifier per la sopravvivenza in background.
+- **`WhoopBLEManager`** (CoreBluetooth): discovery per nome "WHOOP" (+ `retrieveConnectedPeripherals`) →
+  connect → discover → `CLIENT_HELLO` (confirmed write) → enable notify → `ready`. Affidabilità del link:
+  buzz inviato come **`.withResponse`** (consegna garantita o errore → riconnessione), **heartbeat
+  `readRSSI()` ogni 8s** per tenere il link sveglio (la strap droppa i link inattivi) e rilevare un link
+  "zombie" (>30s senza segni di vita → `cancelPeripheralConnection` + reconnect), **retry del buzz** se la
+  chiamata arriva durante una riconnessione. `CBCentralManager` con restore identifier per il background.
 - **`CallMonitor`** (CallKit): `CXCallObserver` → callback su chiamata in arrivo ringing.
 - **`AppState`**: collega chiamata → buzz, con debounce 2s. Espone stato alla UI.
 - **`ContentView`** (SwiftUI): stato connessione, toggle abilitazione, pulsante di prova.

@@ -19,6 +19,9 @@ struct ContentView: View {
                     if app.ble.connection == .scanning {
                         LabeledContent("Dispositivi BLE visti", value: "\(app.ble.scannedCount)")
                     }
+                    if let rssi = app.ble.rssi, app.ble.connection == .ready {
+                        LabeledContent("Segnale", value: "\(signalLabel(rssi)) (\(rssi) dBm)")
+                    }
                 }
 
                 Section("Notifiche chiamate") {
@@ -58,6 +61,14 @@ struct ContentView: View {
         case .handshaking: return "Handshake…"
         case .ready: return "Pronto"
         case .disconnected: return "Disconnesso"
+        }
+    }
+
+    private func signalLabel(_ rssi: Int) -> String {
+        switch rssi {
+        case (-65)...: return "Ottimo"
+        case (-80)..<(-65): return "Buono"
+        default: return "Debole"
         }
     }
 
