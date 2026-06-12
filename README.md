@@ -48,13 +48,30 @@ cd WhoopProtocol && swift test
 open WhoopBuzz.xcodeproj
 ```
 
-## Limiti noti (onestà prima di tutto)
+## Stabilità — come resta "sempre attiva"
 
-- **Affidabilità in background**: iOS può sospendere l'app. La connessione BLE persistente + la
-  background mode `bluetooth-central` la tengono viva, ma **questo è il punto da validare su device**:
-  va verificato che `CXCallObserver` scateni la vibrazione a telefono bloccato e app in background.
+Cosa garantisce il funzionamento continuo (già in codice):
+- **Keep-alive audio**: una sessione audio silenziosa (`.mixWithOthers`, non interrompe la musica)
+  impedisce a iOS di sospendere l'app a schermo bloccato, così `CXCallObserver` scatta sempre e la
+  scrittura BLE parte. Si riattiva da sola dopo ogni chiamata.
+- **Watchdog di riconnessione** (ogni 8s): se il braccialetto si scollega per qualsiasi motivo, l'app
+  riprova finché non si riaggancia, senza intervento.
+- **State restoration**: se iOS termina l'app in background per memoria, la rilancia da solo al primo
+  evento Bluetooth del braccialetto.
+
+Cosa invece richiede un gesto tuo (limiti strutturali di iOS, non aggirabili):
+- **Non fare force-quit** dell'app (non scartarla dall'app switcher): iOS non rilancia un'app chiusa
+  manualmente. Se lo fai, riaprila una volta.
+- **Dopo un riavvio del telefono**: riapri l'app una volta (nessuna app sideloaded può auto-avviarsi al boot).
+- **Firma**: con account a pagamento il profilo dura ~12 mesi; dopo, l'app va re-installata (un comando).
+
+## Altri limiti noti
+
 - **Conflitto con l'app WHOOP ufficiale**: il braccialetto accetta **un solo dispositivo per volta**.
-  Mentre WhoopBuzz è connessa, l'app WHOOP ufficiale non può sincronizzare (e viceversa).
+  Quando apri l'app WHOOP ufficiale per sincronizzare, "ruba" il braccialetto e in quel momento le
+  chiamate non fanno vibrare; appena la chiudi, WhoopBuzz si riconnette da sola (watchdog).
+- **In carica**: il braccialetto sotto carica non si fa trovare → niente buzz mentre carica.
 - **Solo chiamate**: niente notifiche di messaggi WhatsApp testuali — su iPhone è impossibile per
-  un'app di terze parti leggere le notifiche altrui. Vedi la chat di progetto per il perché.
-- **Firma gratuita**: senza un account Apple Developer a pagamento, l'app va re-installata ogni 7 giorni.
+  un'app di terze parti leggere le notifiche altrui.
+- **Batteria**: BLE persistente + audio keep-alive consumano batteria extra (telefono e braccialetto).
+  Quantità da osservare nell'uso reale; ottimizzabile se eccessiva.

@@ -5,8 +5,11 @@ import Foundation
 final class AppState: ObservableObject {
     let ble = WhoopBLEManager()
     private let calls = CallMonitor()
+    private let keepAlive = KeepAlive()
 
-    @Published var buzzOnCallEnabled = true
+    @Published var buzzOnCallEnabled = true {
+        didSet { updateKeepAlive() }
+    }
 
     /// Timestamp of the last buzz we fired, for the UI log.
     @Published private(set) var lastCallBuzz: Date?
@@ -20,6 +23,15 @@ final class AppState: ObservableObject {
         ble.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        updateKeepAlive()
+    }
+
+    private func updateKeepAlive() {
+        if buzzOnCallEnabled {
+            keepAlive.start()
+        } else {
+            keepAlive.stop()
+        }
     }
 
     func startBluetooth() {

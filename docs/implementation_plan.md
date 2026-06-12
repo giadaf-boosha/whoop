@@ -18,21 +18,27 @@
 
 **DoD:** progetto strutturalmente valido. Build completa su device = Sprint 2 (richiede hardware).
 
-## Sprint 2 — Validazione su hardware ⏳ RICHIEDE GIADA + DISPOSITIVI
-Bloccato da: (a) Xcode toolchain da riparare (`xcodebuild -runFirstLaunch`), (b) iPhone + braccialetto.
-- [ ] Riparare toolchain Xcode, aprire il progetto, impostare Team di firma, build su iPhone
-- [ ] Prova in primo piano: pulsante "Fai vibrare ora" → il braccialetto vibra + ack confermato
-- [ ] Prova chiamata nativa in arrivo (foreground) → vibrazione
-- [ ] Prova chiamata in background / telefono bloccato → vibrazione **(rischio #1 — validare qui)**
-- [ ] Prova chiamata WhatsApp → vibrazione
-- [ ] Misura impatto batteria della connessione BLE persistente nelle 24h
+## Sprint 2 — Validazione su hardware ✅ FATTO (su iPhone 17 Pro Max + WHOOP, 2026-06-12)
+- [x] Toolchain Xcode riparata, build + install + launch via CLI (`xcodebuild` + `devicectl`)
+- [x] Team di firma a pagamento (`ZJL5DVGA79`) — niente scadenza a 7 giorni
+- [x] Pulsante "Fai vibrare ora" → vibra
+- [x] Chiamata in arrivo (foreground) → vibra
+- [x] **Chiamata a telefono bloccato → vibra** (il rischio #1 è risolto)
+- [x] **Chiamate multiple consecutive da bloccato → vibrano tutte** (keep-alive sopravvive all'interruzione)
 
-**DoD:** vibrazione affidabile su chiamata in arrivo a telefono bloccato.
+**Fix chiave emersi dal campo:**
+- Scan per **nome** "WHOOP" + `retrieveConnectedPeripherals` (lo scan per service UUID non trovava il braccialetto).
+- Buzz tramite **loops interni** del comando haptic (ultimo byte del body = ripetizioni) invece di N scritture
+  temporizzate: forte e affidabile anche durante il caos di una chiamata in arrivo.
+- Keep-alive con **`AVAudioPlayer`** (non `AVAudioEngine`) + ripresa su `interruption .ended`: sopravvive
+  alle chiamate; senza, funzionava solo la prima chiamata.
 
-## Sprint 3 — Robustezza (solo se Sprint 2 mostra problemi)
-Possibili interventi *se* il background si rivela inaffidabile:
-- [ ] Pattern di buzz ripetuto finché la chiamata squilla
-- [ ] Gestione esplicita del conflitto con l'app WHOOP ufficiale (avviso in UI)
-- [ ] Strategia di re-firma per la scadenza 7 giorni (se firma gratuita)
+## Sprint 3 — Stabilità "sempre attiva" ✅ FATTO
+- [x] **Watchdog di riconnessione** (ogni 8s): recupera da qualsiasi drop (fuori raggio, carica, app
+      ufficiale che ruba il braccialetto) senza intervento utente.
+- [x] **State restoration** (`CBCentralManagerOptionRestoreIdentifierKey`): iOS rilancia l'app in
+      background dopo un evento BLE anche se l'aveva terminata per memoria.
+- [x] Buzz più forte/lungo (loops 15 × 3 ripetizioni).
 
-Non implementare nulla di Sprint 3 prima dei dati di Sprint 2 (YAGNI).
+**Limiti strutturali iOS (non aggirabili, documentati in README):** force-quit manuale e riavvio del
+telefono richiedono di riaprire l'app una volta; il profilo di firma scade circa ogni 12 mesi.

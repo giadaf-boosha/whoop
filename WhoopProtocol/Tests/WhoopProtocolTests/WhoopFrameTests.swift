@@ -52,6 +52,14 @@ final class WhoopFrameTests: XCTestCase {
         XCTAssertTrue(WhoopFrame.isValid(frame))
     }
 
+    func testLoopsByteIsSetInBody() {
+        let frame = WhoopFrame.buzz(seq: 0, loops: 5)
+        // inner record starts at 8 ([type,seq,cmd] = frame[8..10]); body starts at frame[11];
+        // the loops byte is the body's 12th byte (index 11) → frame[11 + 11] = frame[22].
+        XCTAssertEqual(frame[22], 5)
+        XCTAssertTrue(WhoopFrame.isValid(frame))
+    }
+
     // MARK: Validation rejects corruption
 
     func testIsValidRejectsFlippedByte() {

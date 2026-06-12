@@ -16,6 +16,9 @@ struct ContentView: View {
                     if let name = app.ble.deviceName {
                         LabeledContent("Dispositivo", value: name)
                     }
+                    if app.ble.connection == .scanning {
+                        LabeledContent("Dispositivi BLE visti", value: "\(app.ble.scannedCount)")
+                    }
                 }
 
                 Section("Notifiche chiamate") {

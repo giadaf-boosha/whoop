@@ -23,11 +23,16 @@ final class WhoopBLEManager: NSObject, ObservableObject {
     @Published private(set) var connection: WhoopConnection = .disconnected
     @Published private(set) var deviceName: String?
     @Published private(set) var lastBuzzAcked: Bool = false
+    /// Number of BLE peripherals seen during the current scan — a diagnostic that
+    /// distinguishes "scan blocked / nothing advertising" (0) from "saw devices but
+    /// none was a WHOOP" (>0).
+    @Published private(set) var scannedCount: Int = 0
 
     private var central: CBCentralManager!
     private var strap: CBPeripheral?
     private var commandChar: CBCharacteristic?
     private var seq: UInt8 = 0
+    private var watchdog: Timer?
 
     private let serviceUUID = CBUUID(string: Whoop.serviceUUID)
     private let commandUUID = CBUUID(string: Whoop.commandWriteUUID)
@@ -41,23 +46,87 @@ final class WhoopBLEManager: NSObject, ObservableObject {
             queue: .main,
             options: [CBCentralManagerOptionRestoreIdentifierKey: restoreID]
         )
+        // Re-check the connection regularly and recover from any drop (out of range,
+        // strap on charger, the official WHOOP app stealing it) without user action.
+        watchdog = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
+            self?.ensureConnected()
+        }
     }
 
-    /// Begin scanning if Bluetooth is ready and we are not already connected.
+    /// Make sure we are connected or actively trying to be. Called by the watchdog.
+    private func ensureConnected() {
+        guard central?.state == .poweredOn else { return }
+        switch connection {
+        case .ready, .connecting, .handshaking:
+            return
+        default:
+            if let strap {
+                connection = .connecting
+                central.connect(strap)
+            } else {
+                start()
+            }
+        }
+    }
+
+    /// Begin discovery if Bluetooth is ready and we are not already connected.
+    ///
+    /// Two-pronged because the strap may not be discoverable by a plain scan:
+    /// 1. If it is already connected to the system (e.g. the official WHOOP app
+    ///    holds it), it has stopped advertising — only `retrieveConnectedPeripherals`
+    ///    can recover it.
+    /// 2. Otherwise scan for *all* peripherals and match by name. The strap does not
+    ///    reliably put its 128-bit service UUID in the advertising packet, so a
+    ///    service-filtered scan misses it; the reference implementation matches on the
+    ///    "WHOOP" name prefix instead (see docs/ble-protocol-research.md §5).
     func start() {
         guard central.state == .poweredOn else { return }
         guard strap == nil else { return }
+
+        if let existing = central.retrieveConnectedPeripherals(withServices: [serviceUUID]).first {
+            connectTo(existing)
+            return
+        }
+
+        scannedCount = 0
         connection = .scanning
-        central.scanForPeripherals(withServices: [serviceUUID])
+        central.scanForPeripherals(withServices: nil)
     }
 
-    /// Send the notify-style haptic buzz. Safe to call when not ready (no-op).
+    private func connectTo(_ peripheral: CBPeripheral) {
+        central.stopScan()
+        strap = peripheral
+        deviceName = peripheral.name
+        peripheral.delegate = self
+        connection = .connecting
+        central.connect(peripheral)
+    }
+
+    /// How many times the strap repeats the waveform per command (a longer, stronger
+    /// buzz from a single write — robust to app timing during an incoming call).
+    private let buzzLoops: UInt8 = 15
+
+    /// Number of commands fired per buzz and their spacing — chained back-to-back so
+    /// the strong looped haptic plays as one long, sustained buzz, with redundancy in
+    /// case a write is lost amid the incoming-call moment.
+    private let buzzRepeats = 3
+    private let buzzRepeatInterval: TimeInterval = 1.4
+
+    /// Fire the strong, sustained looped haptic. Safe to call when not ready (no-op).
     func buzz() {
-        guard let strap, let commandChar, connection == .ready else { return }
+        guard connection == .ready else { return }
         lastBuzzAcked = false
+        for i in 0..<buzzRepeats {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * buzzRepeatInterval) { [weak self] in
+                self?.sendOnePulse()
+            }
+        }
+    }
+
+    private func sendOnePulse() {
+        guard let strap, let commandChar, connection == .ready else { return }
         seq &+= 1
-        let frame = Data(WhoopFrame.buzz(seq: seq))
-        strap.writeValue(frame, for: commandChar, type: .withoutResponse)
+        strap.writeValue(Data(WhoopFrame.buzz(seq: seq, loops: buzzLoops)), for: commandChar, type: .withoutResponse)
     }
 
     private func sendClientHello() {
@@ -100,12 +169,10 @@ extension WhoopBLEManager: CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        central.stopScan()
-        strap = peripheral
-        deviceName = peripheral.name
-        peripheral.delegate = self
-        connection = .connecting
-        central.connect(peripheral)
+        scannedCount += 1
+        let advName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? ""
+        guard advName.uppercased().hasPrefix("WHOOP") else { return }
+        connectTo(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {

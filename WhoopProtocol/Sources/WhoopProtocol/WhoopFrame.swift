@@ -49,8 +49,16 @@ public enum WhoopFrame {
 
     /// The WHOOP 5 / MG "notify" buzz frame: maverick haptic (opcode 0x13),
     /// puffin-framed and pad4'd. This is the single command this app sends.
-    public static func buzz(seq: UInt8 = 0) -> [UInt8] {
-        puffinCommand(cmd: Whoop.hapticCommand, seq: seq, payload: pad4(Whoop.hapticNotifyBody))
+    ///
+    /// `loops` is the body's last byte — the `overallWaveformLoopControl` — which
+    /// tells the strap how many times to repeat the waveform on its own. A higher
+    /// value yields a longer, stronger buzz from a single write, so the buzz does not
+    /// depend on the app firing multiple commands with precise timing (which is
+    /// unreliable during an incoming call). The documented single-execution value is 1.
+    public static func buzz(seq: UInt8 = 0, loops: UInt8 = 1) -> [UInt8] {
+        var body = Whoop.hapticNotifyBody
+        body[body.count - 1] = loops
+        return puffinCommand(cmd: Whoop.hapticCommand, seq: seq, payload: pad4(body))
     }
 
     /// True if a frame's declared length, CRC16 header and CRC32 trailer all check out.

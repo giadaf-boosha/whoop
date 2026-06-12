@@ -14,8 +14,25 @@
 		0A0000000000000000000006 /* WhoopBuzz.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhoopBuzz.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0A0000000000000000000013 /* Exceptions for "WhoopBuzz" folder in "WhoopBuzz" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0A0000000000000000000004 /* WhoopBuzz */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		0A0000000000000000000005 /* WhoopBuzz */ = {isa = PBXFileSystemSynchronizedRootGroup; path = WhoopBuzz; sourceTree = "<group>"; };
+		0A0000000000000000000005 /* WhoopBuzz */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0A0000000000000000000013 /* Exceptions for "WhoopBuzz" folder in "WhoopBuzz" target */,
+			);
+			path = WhoopBuzz;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -171,6 +188,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZJL5DVGA79;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WhoopBuzz/Info.plist;
@@ -197,6 +215,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZJL5DVGA79;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WhoopBuzz/Info.plist;
