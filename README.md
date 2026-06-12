@@ -22,8 +22,9 @@ Nasce per non dover più indossare l'Apple Watch solo per accorgersi delle chiam
 WhoopProtocol/        Package Swift puro: framing BLE + CRC + costanti. ZERO dipendenze di piattaforma.
                       È il cuore verificato del progetto — `swift test` passa 9/9, incluso il golden
                       vector che ricostruisce il CLIENT_HELLO ufficiale byte-per-byte.
-WhoopBuzz/            App iOS (SwiftUI): BLE manager, osservatore chiamate, UI.
+WhoopBuzz/            App iOS (SwiftUI): BLE manager, osservatore chiamate, keep-alive, UI, app icon.
 WhoopBuzz.xcodeproj/  Progetto Xcode (dipende dal package locale WhoopProtocol).
+tools/make_icon.swift Generatore dell'app icon (CoreGraphics, 1024×1024 senza alpha).
 docs/                 Spec, piano, e ricerca sul protocollo con tutte le fonti.
 ```
 

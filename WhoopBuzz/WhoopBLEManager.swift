@@ -111,7 +111,7 @@ final class WhoopBLEManager: NSObject, ObservableObject {
     /// Number of commands fired per buzz and their spacing — chained back-to-back so
     /// the looped haptic plays as one long, sustained buzz, with redundancy in case a
     /// write is lost amid the incoming-call moment.
-    private let buzzRepeats = 4
+    private let buzzRepeats = 7
     private let buzzRepeatInterval: TimeInterval = 1.1
 
     /// Fire the strong, sustained looped haptic. Safe to call when not ready (no-op).

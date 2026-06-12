@@ -38,7 +38,10 @@
       ufficiale che ruba il braccialetto) senza intervento utente.
 - [x] **State restoration** (`CBCentralManagerOptionRestoreIdentifierKey`): iOS rilancia l'app in
       background dopo un evento BLE anche se l'aveva terminata per memoria.
-- [x] Buzz più forte/lungo (loops 15 × 3 ripetizioni).
+- [x] Buzz forte/lungo: loops **6** (valore accettato dal firmware — 15 veniva rifiutato → nessuna
+      vibrazione) × **7 ripetizioni** ~1.1s → buzz sostenuto di ~8 secondi.
+- [x] **App icon**: smartwatch + onde radio su gradiente, generata via `tools/make_icon.swift`
+      (CoreGraphics, 1024×1024 opaca senza alpha), asset catalog + `ASSETCATALOG_COMPILER_APPICON_NAME`.
 
 **Limiti strutturali iOS (non aggirabili, documentati in README):** force-quit manuale e riavvio del
 telefono richiedono di riaprire l'app una volta; il profilo di firma scade circa ogni 12 mesi.
